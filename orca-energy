@@ -971,7 +971,14 @@ def main():
                       help="Print more.")
   parser.add_argument("-t", "--total", action="store_true",
                       help="Get total energies.")
+  parser.add_argument("-s", "--save", action="store_true",
+                      help="Save data.")
   args = parser.parse_args()
+
+
+  if not Path("./NCIBLIND10").exists() or not Path("./S22x5").exists() or not Path("./S66x8").exists():
+    sys.exit("Benchmarks not found! Execute script in folder containing 'NCIBLIND10', 'S22x5' and 'S66x8'.")
+
 
   if args.total:
     energy_string = "Total Energy       :"
@@ -1043,14 +1050,15 @@ def main():
       print([system] + e)
 
   # Save data
-  data = np.asarray(data, dtype=str)
-  if omegas[0] == 0:
-    np.savetxt(f"{func.lower()}.csv", data, delimiter=",", fmt="%s")
-    print(f"Saving raw energies to '{func.lower()}.csv'.")
-  else:
-    for i, omega in enumerate(omegas):
-      np.savetxt(f"{func.lower()}_{omega}.csv", data[:, [0, i + 1]], delimiter=",", fmt="%s")
-      print(f"Saving raw energies for omega={omega} to '{func.lower()}_{omega}.csv'.")
+  if args.save:
+    data = np.asarray(data, dtype=str)
+    if omegas[0] == 0:
+      np.savetxt(f"{func.lower()}.csv", data, delimiter=",", fmt="%s")
+      print(f"Saving raw energies to '{func.lower()}.csv'.")
+    else:
+      for i, omega in enumerate(omegas):
+        np.savetxt(f"{func.lower()}_{omega}.csv", data[:, [0, i + 1]], delimiter=",", fmt="%s")
+        print(f"Saving raw energies for omega={omega} to '{func.lower()}_{omega}.csv'.")
 
 
 if __name__ == '__main__':
