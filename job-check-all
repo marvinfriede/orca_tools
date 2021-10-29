@@ -5,7 +5,6 @@ import os
 import sys
 import glob
 import argparse
-import shutil
 
 
 def main():
@@ -25,24 +24,48 @@ def main():
     count_criter = 0
     num_jobs = 1
 
-    with open(filename, errors='ignore') as f:
-      for line in f:
-        # get number of jobs in multijob file
-        if "JOBS TO BE PROCESSED THIS RUN" in line:
-          num_jobs = int(line.strip().split()[3])
-          continue
+    # ORCA files
+    if "orca" in filename:
+      with open(filename, errors='ignore') as f:
+        for line in f:
+          # get number of jobs in multijob file
+          if "JOBS TO BE PROCESSED THIS RUN" in line:
+            num_jobs = int(line.strip().split()[3])
+            continue
 
-        if "SCF CONVERGED AFTER" in line:
-          count_criter += 1
-          continue
+          if "SCF CONVERGED AFTER" in line:
+            count_criter += 1
+            continue
 
-        if "NOT FULLY CONVERGED" in line:
+          if "NOT FULLY CONVERGED" in line:
+            failed.append(filename)
+            break  
+
+        # check convergence for my multijob
+        if count_criter != num_jobs:
           failed.append(filename)
-          break  
 
-      # check convergence for my multijob
-      if count_criter != num_jobs:
-        failed.append(filename)
+    # Q-CHEM files
+    elif "job.out" in filename:
+      with open(filename, errors='ignore') as f:
+        for line in f:
+          # get number of jobs in multijob file
+          if line.startswith("User input:") and "of" in line:
+            num_jobs = int(line.strip().split()[-1])
+            continue
+
+          if "Convergence criterion met" in line:
+            count_criter += 1
+            continue
+
+        # check convergence for my multijob
+        if count_criter != num_jobs:
+          failed.append(filename)
+
+    # unrecognized files
+    else:
+      print(f"File '{filename}' not recognized.")
+
 
   print("\nFinished!\n")
   if len(failed) == 0:
@@ -51,15 +74,16 @@ def main():
     print("WARNING!!! Convergence not reached in:")
     for i in failed:
       print(i)
-
   
 
 def getFileList():
   filelist = []
 
   print("Compiling file list...")
-  files = glob.glob('./**/orca*.out', recursive=True)
-  for file in files:
+  for file in glob.glob('./**/orca*.out', recursive=True):
+    filelist.append(file)
+
+  for file in glob.glob('./**/job.out', recursive=True):
     filelist.append(file)
 
   if len(filelist) == 0:
