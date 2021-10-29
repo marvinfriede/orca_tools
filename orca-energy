@@ -14,6 +14,135 @@ except ModuleNotFoundError:
   sys.exit("Module 'numpy' not installed. Exiting.")
 
 
+def main():
+  args = init_argparser()
+
+  # check if executed in directory with benchmarks
+  if not Path("./NCIBLIND10").exists() or not Path("./S22x5").exists() or not Path("./S66x8").exists():
+    sys.exit("Benchmarks not found! Execute script in folder containing 'NCIBLIND10', 'S22x5' and 'S66x8'.")
+
+  # total energy vs. final single point energy
+  if args.total:
+    energy_string = "Total Energy       :"
+    energy_pos = 3
+  else:
+    energy_string = "FINAL SINGLE POINT ENERGY"
+    energy_pos = 1
+
+  # remove from name of directory
+  func = Path.cwd().name.replace("-low", "")
+
+  # omegas
+  omegas = getOmegas()
+  num_jobs = len(omegas)
+  print(f"Found {len(omegas)} omega values: {omegas}\n")
+
+  # column names
+  cols = []
+  funcname = func.upper().replace("W", "w").replace("H", "h").replace("CAM", "cam")
+  for i in omegas:
+    if i == 0:
+      cols.append(f"{funcname}/def2-QZVP/ORCA_5.0.1")
+    else:
+      cols.append(f"{funcname}(w={i})/def2-QZVP/ORCA_5.0.1")
+
+
+  # column names for csv
+  data = [["system"] + cols]
+
+  for system in systemList():
+    path = Path(f"{system}/orca.mpi.4.out")
+    if not path.is_file():
+      print(f"WARNING!!! File {path} not found. Skipping...")
+      continue
+
+    with open(path) as f:
+      count_criter = 0
+      e = []
+      o = []
+
+      for line in f:
+        if "RangeSepMu" in line:
+          omega_line = line.lower().split()
+          o.append(int(float(omega_line[-1]) * 1000))
+
+        if "SCF CONVERGED AFTER" in line:
+          count_criter += 1
+
+        if energy_string in line:
+          energy = line.strip().split()[energy_pos]
+          e.append(float(energy))
+
+      # check convergence for my multijob
+      if count_criter != num_jobs:
+        sys.exit(f"Convergence not reached in {system}.")
+
+      # check order of omegas
+      if omegas[0] != 0:
+        if o != omegas:
+          sys.exit("Order of omegas wrong!")
+
+
+    data.append([system] + e)
+
+    if args.verbose:
+      print([system] + e)
+
+  # Save data
+  if args.save:
+    data = np.asarray(data, dtype=str)
+    if omegas[0] == 0:
+      np.savetxt(f"{func.lower()}.csv", data, delimiter=",", fmt="%s")
+      print(f"Saving raw energies to '{func.lower()}.csv'.")
+    else:
+      for i, omega in enumerate(omegas):
+        np.savetxt(f"{func.lower()}_{omega}.csv", data[:, [0, i + 1]], delimiter=",", fmt="%s")
+        print(f"Saving raw energies for omega={omega} to '{func.lower()}_{omega}.csv'.")
+
+
+def init_argparser():
+  parser = argparse.ArgumentParser(
+      description="Get raw electronic energy from the three test sets.")
+  parser.add_argument("-v", "--verbose", action="store_true",
+                      help="Print more.")
+  parser.add_argument("-t", "--total", action="store_true",
+                      help="Get total energies.")
+  parser.add_argument("-s", "--save", action="store_true",
+                      help="Save data.")
+  return parser.parse_args()
+
+
+def getOmegas(test_file="NCIBLIND10/01-A/orca.mpi.4.out"):
+  count_criter = 0
+  o = []
+
+  path = Path(test_file)
+
+  if not path.is_file():
+    print(f"WARNING! Test file '{test_file}' not found. Using default omegas.")
+    omegas = [100, 150, 200, 250, 300, 350, 400, 450]
+    return omegas[::-1]
+
+  with open(path) as f:
+    for line in f:
+      if "RangeSepMu" in line:
+        omega_line = line.lower().split()
+        o.append(int(float(omega_line[-1]) * 1000))
+
+      if "SCF CONVERGED AFTER" in line:
+        count_criter += 1
+
+    # job with no omegas
+    if len(o) == 0:
+      o = [0]
+
+    # check convergence for my multijob
+    if count_criter != len(o):
+      sys.exit(f"Convergence not reached in {test_file}.")
+
+  return o
+
+
 def systemList():
   return ['S22x5/01-A',
           'S22x5/01-B',
@@ -929,136 +1058,6 @@ def systemList():
           'NCIBLIND10/10-14',
           'NCIBLIND10/10-15',
           'NCIBLIND10/10-16']
-
-
-def getOmegas(test_file="NCIBLIND10/01-A/orca.mpi.4.out"):
-  count_criter = 0
-  o = []
-
-  path = Path(test_file)
-
-  if not path.is_file():
-    print(f"WARNING! Test file '{test_file}' not found. Using default omegas.")
-    omegas = [100, 150, 200, 250, 300, 350, 400, 450]
-    return omegas[::-1]
-
-  with open(path) as f:
-    for line in f:
-      if "RangeSepMu" in line:
-        omega_line = line.lower().split()
-        o.append(int(float(omega_line[-1]) * 1000))
-
-      if "SCF CONVERGED AFTER" in line:
-        count_criter += 1
-
-    # job with no omegas
-    if len(o) == 0:
-      o = [0]
-
-    # check convergence for my multijob
-    if count_criter != len(o):
-      sys.exit(f"Convergence not reached in {test_file}.")
-
-  return o
-
-
-def main():
-  parser = argparse.ArgumentParser(
-      description="Get raw electronic energy from the three test sets.")
-  parser.add_argument("-r", "--reverse", action="store_true",
-                      help="Manually reverse order of omegas.")
-  parser.add_argument("-v", "--verbose", action="store_true",
-                      help="Print more.")
-  parser.add_argument("-t", "--total", action="store_true",
-                      help="Get total energies.")
-  parser.add_argument("-s", "--save", action="store_true",
-                      help="Save data.")
-  args = parser.parse_args()
-
-
-  if not Path("./NCIBLIND10").exists() or not Path("./S22x5").exists() or not Path("./S66x8").exists():
-    sys.exit("Benchmarks not found! Execute script in folder containing 'NCIBLIND10', 'S22x5' and 'S66x8'.")
-
-
-  if args.total:
-    energy_string = "Total Energy       :"
-    energy_pos = 3
-  else:
-    energy_string = "FINAL SINGLE POINT ENERGY"
-    energy_pos = 1
-
-  func = Path.cwd().name.replace("-low", "")
-
-  # omegas
-  omegas = getOmegas()
-  num_jobs = len(omegas)
-  print(f"Found {len(omegas)} omega values: {omegas}\n")
-
-  if args.reverse:
-    omegas = omegas[::-1]
-    print(f"WARNING! Order of omegas reversed. Now: {omegas}\n")
-
-  # column names
-  cols = []
-  funcname = func.upper().replace("W", "w").replace("H", "h").replace("CAM", "cam")
-  for i in omegas:
-    if i == 0:
-      cols.append(f"{funcname}/def2-QZVP/ORCA_5.0.1")
-    else:
-      cols.append(f"{funcname}(w={i})/def2-QZVP/ORCA_5.0.1")
-
-
-  # column names for csv
-  data = [["system"] + cols]
-
-  for system in systemList():
-    path = Path(f"{system}/orca.mpi.4.out")
-    if not path.is_file():
-      print(f"WARNING!!! File {path} not found. Skipping...")
-      continue
-
-    with open(path) as f:
-      count_criter = 0
-      e = []
-      o = []
-
-      for line in f:
-        if "RangeSepMu" in line:
-          omega_line = line.lower().split()
-          o.append(int(float(omega_line[-1]) * 1000))
-
-        if "SCF CONVERGED AFTER" in line:
-          count_criter += 1
-
-        if energy_string in line:
-          energy = line.strip().split()[pos]
-          e.append(float(energy))
-
-      # check convergence for my multijob
-      if count_criter != num_jobs:
-        sys.exit(f"Convergence not reached in {system}.")
-
-      # check order of omegas
-      if omegas[0] != 0:
-        if o != omegas:
-          sys.exit("Order of omegas wrong!")
-
-
-    data.append([system] + e)
-
-    if args.verbose:
-      print([system] + e)
-
-  # Save data
-  if args.save:
-    data = np.asarray(data, dtype=str)
-    if omegas[0] == 0:
-      np.savetxt(f"{func.lower()}.csv", data, delimiter=",", fmt="%s")
-      print(f"Saving raw energies to '{func.lower()}.csv'.")
-    else:
-      for i, omega in enumerate(omegas):
-        np.savetxt(f"{func.lower()}_{omega}.csv", data[:, [0, i + 1]], delimiter=",", fmt="%s")
-        print(f"Saving raw energies for omega={omega} to '{func.lower()}_{omega}.csv'.")
 
 
 if __name__ == '__main__':
