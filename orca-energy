@@ -23,11 +23,12 @@ def main():
 
   # total energy vs. final single point energy
   if args.total:
+    print("Gathering TOTAL energies! (Does not include e.g. dispersion correction.)")
     energy_string = "Total Energy       :"
     energy_pos = 3
   else:
     energy_string = "FINAL SINGLE POINT ENERGY"
-    energy_pos = 1
+    energy_pos = -1
 
   # remove from name of directory
   func = Path.cwd().name.replace("-low", "")
@@ -138,6 +139,7 @@ def getOmegas(test_file="NCIBLIND10/01-A/orca.mpi.4.out"):
 
     # check convergence for my multijob
     if count_criter != len(o):
+      print(o)
       sys.exit(f"Convergence not reached in {test_file}.")
 
   return o
