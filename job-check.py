@@ -4,14 +4,24 @@
 import os
 import re
 import sys
-import glob
 import argparse
+from pathlib import Path
+
+try:
+  import pandas as pd
+except ModuleNotFoundError:
+  sys.exit("Module 'pandas' not installed. Exiting.")
+
+try:
+  import numpy as np
+except ModuleNotFoundError:
+  sys.exit("Module 'numpy' not installed. Exiting.")
 
 
 orca = {
   "conv_error_str": "NOT FULLY CONVERGED",
   "multijob_pos": 3,
-  "multijob_str": "JOBS TO BE PROCESSED THIS RUN",
+  "multijob_str": "^\$ THERE ARE \d* JOBS TO BE PROCESSED THIS RUN \$$",
   "out_file": "orca",
   "scf_str": "SCF CONVERGED AFTER"
 }
@@ -20,14 +30,14 @@ qchem = {
   "conv_error_str": "False",
   "multijob_pos": -1,
   "multijob_str": "^User input: \d of \d*$",
-  "out_file": "job.out",
+  "out_file": "job",
   "scf_str": "Convergence criterion met"
 }
 
 
 def initArgparser():
   parser = argparse.ArgumentParser(
-      description='Check all ORCA files for successful run.')
+      description='Check all files for successful run.')
   parser.add_argument("-v", '--verbose', nargs='?', const=0, type=int,
                       help="Print more. Number of rows optional. 0 prints everything")
   return parser.parse_args()
@@ -35,7 +45,6 @@ def initArgparser():
 
 def handleFile(prog, file):
   # init variables
-  failed = []
   count_criter = 0
   num_jobs = 1
 
@@ -52,39 +61,46 @@ def handleFile(prog, file):
         continue
 
       if prog["conv_error_str"] in line:
-        failed.append(file)
-        break  
+        return file
 
     # check convergence for multijob
     if count_criter != num_jobs:
-      failed.append(file)
+      return file
 
-  return failed
+  return False
 
 
 def main():
   args = initArgparser()
 
+  # init variables
+  failed = []
+
   # compile filelist
-  filelist = getFileList()
-  print(f"Going to check {len(filelist)} files...")
+  out_file_names = [orca["out_file"], qchem["out_file"]]
+  filelist, lenFileList = getFileList(out_file_names)
 
   # iterate filelist
-  for i, filename in enumerate(filelist):
+  for i, path in enumerate(filelist):
     # ORCA files
-    if orca["out_file"] in filename:
-      failed = handleFile(orca, filename)
+    if re.match(fr"{orca['out_file']}.*\.out", path.name):
+      status = handleFile(orca, path)
 
     # Q-CHEM files
-    elif qchem["out_file"] in filename:
-      failed = handleFile(qchem, filename)
+    elif re.match(fr"{qchem['out_file']}.*\.out", path.name):
+      status = handleFile(qchem, path)
 
     # unrecognized files
     else:
-      print(f"File '{filename}' not recognized.")
+      print(f"File '{path}' not recognized.")
+      status = False
+
+    if status:
+      failed.append(status)
+
 
     # pretty progress bar
-    progress(i+1, len(filelist))
+    progress(i+1, lenFileList)
 
 
   print("\nFinished!\n")
@@ -96,20 +112,21 @@ def main():
       print(i)
   
 
-def getFileList():
+def getFileList(out_file_names):
   filelist = []
 
-  print("Compiling file list...")
-  for file in glob.glob('./**/orca*.out', recursive=True):
-    filelist.append(file)
-
-  for file in glob.glob('./**/job.out', recursive=True):
-    filelist.append(file)
+  print("Compiling file list...", end =" ")
+  for name in out_file_names:
+    for file in sorted(Path(".").rglob(f"{name}*.out")):
+      filelist.append(file)
 
   if len(filelist) == 0:
     sys.exit("No '.out' files found.")
 
-  return filelist
+  lenFileList = len(filelist)
+  print(f"{lenFileList} files found.")
+
+  return filelist, lenFileList
 
 
 def progress(count, total, status=''):
