@@ -2,69 +2,89 @@
 # coding: utf-8
 
 import os
+import re
 import sys
 import glob
 import argparse
 
 
-def main():
+orca = {
+  "conv_error_str": "NOT FULLY CONVERGED",
+  "multijob_pos": 3,
+  "multijob_str": "JOBS TO BE PROCESSED THIS RUN",
+  "out_file": "orca",
+  "scf_str": "SCF CONVERGED AFTER"
+}
+
+qchem = {
+  "conv_error_str": "False",
+  "multijob_pos": -1,
+  "multijob_str": "^User input: \d of \d*$",
+  "out_file": "job.out",
+  "scf_str": "Convergence criterion met"
+}
+
+
+def initArgparser():
   parser = argparse.ArgumentParser(
       description='Check all ORCA files for successful run.')
   parser.add_argument("-v", '--verbose', nargs='?', const=0, type=int,
                       help="Print more. Number of rows optional. 0 prints everything")
-  args = parser.parse_args()
+  return parser.parse_args()
 
 
+def handleFile(prog, file):
+  # init variables
   failed = []
+  count_criter = 0
+  num_jobs = 1
+
+  with open(file) as f:
+    for line in f:
+      # get number of jobs in multijob file
+      if re.match(prog["multijob_str"], line.strip()):
+        pos = prog["multijob_pos"]
+        num_jobs = int(line.strip().split()[pos])
+        continue
+
+      if prog["scf_str"] in line:
+        count_criter += 1
+        continue
+
+      if prog["conv_error_str"] in line:
+        failed.append(file)
+        break  
+
+    # check convergence for multijob
+    if count_criter != num_jobs:
+      failed.append(file)
+
+  return failed
+
+
+def main():
+  args = initArgparser()
+
+  # compile filelist
   filelist = getFileList()
   print(f"Going to check {len(filelist)} files...")
 
+  # iterate filelist
   for i, filename in enumerate(filelist):
-    progress(i, len(filelist))
-    count_criter = 0
-    num_jobs = 1
-
     # ORCA files
-    if "orca" in filename:
-      with open(filename, errors='ignore') as f:
-        for line in f:
-          # get number of jobs in multijob file
-          if "JOBS TO BE PROCESSED THIS RUN" in line:
-            num_jobs = int(line.strip().split()[3])
-            continue
-
-          if "SCF CONVERGED AFTER" in line:
-            count_criter += 1
-            continue
-
-          if "NOT FULLY CONVERGED" in line:
-            failed.append(filename)
-            break  
-
-        # check convergence for my multijob
-        if count_criter != num_jobs:
-          failed.append(filename)
+    if orca["out_file"] in filename:
+      failed = handleFile(orca, filename)
 
     # Q-CHEM files
-    elif "job.out" in filename:
-      with open(filename, errors='ignore') as f:
-        for line in f:
-          # get number of jobs in multijob file
-          if line.startswith("User input:") and "of" in line:
-            num_jobs = int(line.strip().split()[-1])
-            continue
-
-          if "Convergence criterion met" in line:
-            count_criter += 1
-            continue
-
-        # check convergence for my multijob
-        if count_criter != num_jobs:
-          failed.append(filename)
+    elif qchem["out_file"] in filename:
+      failed = handleFile(qchem, filename)
 
     # unrecognized files
     else:
       print(f"File '{filename}' not recognized.")
+
+    # pretty progress bar
+    progress(i+1, len(filelist))
 
 
   print("\nFinished!\n")
