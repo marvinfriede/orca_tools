@@ -43,7 +43,7 @@ def initArgparser():
   return parser.parse_args()
 
 
-def handleFile(prog, file):
+def isConverged(prog, file):
   # init variables
   count_criter = 0
   num_jobs = 1
@@ -61,13 +61,13 @@ def handleFile(prog, file):
         continue
 
       if prog["conv_error_str"] in line:
-        return file
+        return False
 
     # check convergence for multijob
     if count_criter != num_jobs:
-      return file
+      return False
 
-  return False
+  return True
 
 
 def main():
@@ -75,6 +75,7 @@ def main():
 
   # init variables
   failed = []
+  success = []
 
   # compile filelist
   out_file_names = [orca["out_file"], qchem["out_file"]]
@@ -84,11 +85,11 @@ def main():
   for i, path in enumerate(filelist):
     # ORCA files
     if re.match(fr"{orca['out_file']}.*\.out", path.name):
-      status = handleFile(orca, path)
+      status = isConverged(orca, path)
 
     # Q-CHEM files
     elif re.match(fr"{qchem['out_file']}.*\.out", path.name):
-      status = handleFile(qchem, path)
+      status = isConverged(qchem, path)
 
     # unrecognized files
     else:
@@ -96,7 +97,9 @@ def main():
       status = False
 
     if status:
-      failed.append(status)
+      success.append(path)
+    else:
+      failed.append(path)
 
 
     # pretty progress bar
@@ -107,9 +110,11 @@ def main():
   if len(failed) == 0:
     print("All jobs successful!!")
   else:
-    print(f"WARNING!!! Convergence not reached in {len(failed)}:")
-    for i in failed:
-      print(i)
+    print(f"Only {len(success)}/{lenFileList} calculations converged:")
+    [print(i) for i in success]
+
+    print(f"\nConvergence not reached in {len(failed)}/{lenFileList}:")
+    [print(i) for i in failed]
   
 
 def getFileList(out_file_names):
