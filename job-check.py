@@ -107,7 +107,7 @@ def main():
   if len(failed) == 0:
     print("All jobs successful!!")
   else:
-    print("WARNING!!! Convergence not reached in:")
+    print(f"WARNING!!! Convergence not reached in {len(failed)}:")
     for i in failed:
       print(i)
   
